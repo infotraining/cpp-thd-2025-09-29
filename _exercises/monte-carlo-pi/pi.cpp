@@ -5,38 +5,148 @@
 #include <thread>
 #include <cstdlib>
 #include <ctime>
+#include <random>
+
+/*******************************************************
+ * https://academo.org/demos/estimating-pi-monte-carlo
+ * *****************************************************/
 
 using namespace std;
 
-int main()
+void mc_pi(const uintmax_t count, uintmax_t& hits)
 {
-    const long N = 100'000'000;
+    const auto seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    std::mt19937_64 rnd_gen(seed);
+    std::uniform_real_distribution<double> rnd_distr(0.0, 1.0);
 
-    std::srand(static_cast<unsigned int>(std::time(nullptr)));
-    
-    //////////////////////////////////////////////////////////////////////////////
-    // single thread
-
-    cout << "Pi calculation started!" << endl;
-    const auto start = chrono::high_resolution_clock::now();
-        
-    long hits = 0;
-
-    for (long n = 0; n < N; ++n)
+    uintmax_t local_hits = 0;
+    for (long n = 0; n < count; ++n) // hot-loop
     {
-        double x = rand() / static_cast<double>(RAND_MAX);
-        double y = rand() / static_cast<double>(RAND_MAX);
+        double x = rnd_distr(rnd_gen);
+        double y = rnd_distr(rnd_gen);
+        if (x * x + y * y < 1)
+            local_hits++;
+    }
+    hits = local_hits;
+}
+
+void mc_pi_cache_ping_pong(const uintmax_t count, uintmax_t& hits)
+{
+    const auto seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+    std::mt19937_64 rnd_gen(seed);
+    std::uniform_real_distribution<double> rnd_distr(0.0, 1.0);
+    for (long n = 0; n < count; ++n) // hot-loop
+    {
+        double x = rnd_distr(rnd_gen);
+        double y = rnd_distr(rnd_gen);
         if (x * x + y * y < 1)
             hits++;
     }
+}
 
-    const double pi = static_cast<double>(hits) / N * 4;
+double single_thread_pi(uintmax_t count)
+{
+    uintmax_t hits{};
 
-    const auto end = chrono::high_resolution_clock::now();
-    const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+    mc_pi(count, hits);
 
-    cout << "Pi = " << pi << endl;
-    cout << "Elapsed = " << elapsed_time << "ms" << endl;
+    const double pi = static_cast<double>(hits) / count * 4;
+
+    return pi;
+}
+
+double multi_thread_pi(uintmax_t count)
+{
+    const size_t no_of_cores = std::max(std::thread::hardware_concurrency(), 1u);
+    const uintmax_t count_per_thread = count / no_of_cores;
+
+    std::vector<uintmax_t> partial_hits(no_of_cores);
+    {
+        std::vector<std::jthread> threads(no_of_cores);
+
+        for(size_t i = 0; i < threads.size(); ++i)
+        {
+            threads[i] = std::jthread{mc_pi, count_per_thread, std::ref(partial_hits[i])};
+        }
+    } // implicit join
+
+    const uintmax_t hits = std::accumulate(partial_hits.begin(), partial_hits.end(), std::uintmax_t{});
+
+    const double pi = static_cast<double>(hits) / count * 4;
+
+    return pi;
+}
+
+double multi_thread_pi_cache_ping_pong(uintmax_t count)
+{
+    const size_t no_of_cores = std::max(std::thread::hardware_concurrency(), 1u);
+    const uintmax_t count_per_thread = count / no_of_cores;
+
+    std::vector<uintmax_t> partial_hits(no_of_cores);
+    {
+        std::vector<std::jthread> threads(no_of_cores);
+
+        for(size_t i = 0; i < threads.size(); ++i)
+        {
+            threads[i] = std::jthread{mc_pi_cache_ping_pong, count_per_thread, std::ref(partial_hits[i])};
+        }
+    } // implicit join
+
+    const uintmax_t hits = std::accumulate(partial_hits.begin(), partial_hits.end(), std::uintmax_t{});
+
+    const double pi = static_cast<double>(hits) / count * 4;
+
+    return pi;
+}
+
+int main()
+{
+    std::cout << "Cache Line Size: " << std::hardware_destructive_interference_size << "\n";
+
+    const uintmax_t N = 500'000'000;
 
     //////////////////////////////////////////////////////////////////////////////
+    // single thread
+    {
+        cout << "Single thread - Pi calculation started!" << endl;
+        const auto start = chrono::high_resolution_clock::now();
+            
+        const double pi = single_thread_pi(N);
+
+        const auto end = chrono::high_resolution_clock::now();
+        const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+        cout << "Pi = " << pi << endl;
+        cout << "Elapsed = " << elapsed_time << "ms" << endl;
+    }
+
+    //////////////////////////////////////////////////////////////////////////////
+    // multithreading - cache ping-pong
+    {
+        cout << "Multithreading Cache Ping-Pong - Pi calculation started!" << endl;
+        const auto start = chrono::high_resolution_clock::now();
+            
+        const double pi = multi_thread_pi_cache_ping_pong(N);
+
+        const auto end = chrono::high_resolution_clock::now();
+        const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+        cout << "Pi = " << pi << endl;
+        cout << "Elapsed = " << elapsed_time << "ms" << endl;
+    }
+
+    //////////////////////////////////////////////////////////////////////////////
+    // multithreading
+    {
+        cout << "Multithreading - Pi calculation started!" << endl;
+        const auto start = chrono::high_resolution_clock::now();
+            
+        const double pi = multi_thread_pi(N);
+
+        const auto end = chrono::high_resolution_clock::now();
+        const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+        cout << "Pi = " << pi << endl;
+        cout << "Elapsed = " << elapsed_time << "ms" << endl;
+    }
 }

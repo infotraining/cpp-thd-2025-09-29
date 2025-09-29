@@ -165,6 +165,9 @@ void jthread_demo()
 
 int main()
 {
+    const size_t no_of_cores = std::max(1u, std::thread::hardware_concurrency());
+    std::cout << "No of cores: " << no_of_cores << std::endl;
+
     std::cout << "Main thread starts..." << std::endl;
     const std::string text = "Hello Threads";
     
