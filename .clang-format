@@ -3,7 +3,7 @@ AlignTrailingComments: true
 AllowShortBlocksOnASingleLine: Always
 AllowShortEnumsOnASingleLine: true
 AllowShortFunctionsOnASingleLine: InlineOnly
-AllowShortLambdasOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
 #BreakBeforeBraces: Allman
 BreakBeforeBraces: Custom
 BraceWrapping:

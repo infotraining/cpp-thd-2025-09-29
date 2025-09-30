@@ -6,53 +6,59 @@
 #include <numeric>
 #include <random>
 #include <string>
+#include <syncstream>
 #include <thread>
 #include <vector>
-#include <syncstream>
 
 using namespace std::literals;
 
-class Data
+namespace EventsWithConditionVars
 {
-    std::vector<int> data_;
-    bool is_ready_ = false;
-    std::mutex mtx_is_ready_;
-    std::condition_variable cv_data_ready;
-
-public:
-    void read()
+    class Data
     {
-        std::osyncstream(std::cout) << "Start reading..." << std::endl;
-        data_.resize(100);
+        std::vector<int> data_;
+        bool is_ready_ = false;
+        std::mutex mtx_is_ready_;
+        std::condition_variable cv_data_ready;
 
-        std::random_device rnd;
-        std::generate(begin(data_), end(data_), [&rnd] { return rnd() % 1000; });
-        std::this_thread::sleep_for(2s);
-        std::osyncstream(std::cout) << "End reading..." << std::endl;
-        
+    public:
+        void read()
         {
-            std::lock_guard lk{mtx_is_ready_};
-            is_ready_ = true;
-        }      
-        cv_data_ready.notify_all();     
-    }
+            std::osyncstream(std::cout) << "Start reading..." << std::endl;
+            data_.resize(100);
 
-    void process(int id)
-    {
-        std::unique_lock lk{mtx_is_ready_};
-        cv_data_ready.wait(lk, [&] { return is_ready_; });
-        lk.unlock();
+            std::random_device rnd;
+            std::generate(begin(data_), end(data_), [&rnd] { return rnd() % 1000; });
+            std::this_thread::sleep_for(2s);
+            std::osyncstream(std::cout) << "End reading..." << std::endl;
 
-        long sum = std::accumulate(begin(data_), end(data_), 0L);
-        std::osyncstream(std::cout) << "Id: " << id << "; Sum: " << sum << std::endl;
-    }
-};
+            {
+                std::lock_guard lk{mtx_is_ready_};
+                is_ready_ = true;
+            }
+            cv_data_ready.notify_all();
+        }
+
+        void process(int id)
+        {
+            std::unique_lock lk{mtx_is_ready_};
+            cv_data_ready.wait(lk, [&] { return is_ready_; });
+            lk.unlock();
+
+            long sum = std::accumulate(begin(data_), end(data_), 0L);
+            std::osyncstream(std::cout) << "Id: " << id << "; Sum: " << sum << std::endl;
+        }
+    };
+} // namespace EventsWithConditionVars
 
 int main()
 {
+    using EventsWithConditionVars::Data;
+
     std::osyncstream(std::cout) << "Start of main..." << std::endl;
     {
         Data data;
+
         std::jthread thd_producer{[&data] { data.read(); }};
 
         std::jthread thd_consumer_1{[&data] { data.process(1); }};
