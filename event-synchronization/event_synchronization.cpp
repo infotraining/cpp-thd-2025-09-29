@@ -17,6 +17,7 @@ class Data
     std::vector<int> data_;
     bool is_ready_ = false;
     std::mutex mtx_is_ready_;
+    std::condition_variable cv_data_ready;
 
 public:
     void read()
@@ -32,18 +33,15 @@ public:
         {
             std::lock_guard lk{mtx_is_ready_};
             is_ready_ = true;
-        }           
+        }      
+        cv_data_ready.notify_all();     
     }
 
     void process(int id)
     {
-        auto data_ready = [&]() { 
-            std::lock_guard lk{mtx_is_ready_};
-            return is_ready_;
-        };
-
-        while(!data_ready())
-        {}
+        std::unique_lock lk{mtx_is_ready_};
+        cv_data_ready.wait(lk, [&] { return is_ready_; });
+        lk.unlock();
 
         long sum = std::accumulate(begin(data_), end(data_), 0L);
         std::osyncstream(std::cout) << "Id: " << id << "; Sum: " << sum << std::endl;
