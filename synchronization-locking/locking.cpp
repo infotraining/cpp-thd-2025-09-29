@@ -65,6 +65,39 @@ void test_lookup_table()
     constexpr auto lookup_factorial = create_factorial_lookup_table<13>();
 }
 
+void timed_mutex_demo()
+{
+    std::timed_mutex mutex;
+    
+    auto work_1 = [&](){
+        std::cout << "START#1" << std::endl;
+        std::unique_lock<std::timed_mutex> lock(mutex, std::try_to_lock);
+        if (!lock.owns_lock())
+        {
+            do
+            {
+                std::cout << "Thread does not own a lock..."
+                        << " Tries to acquire a mutex..."
+                        << std::endl;
+            } while(!lock.try_lock_for(std::chrono::seconds(1)));
+        }
+
+        std::cout << "Access#1 granted" << "\n";
+    };
+
+    auto work_2 = [&]() {
+        std::cout << "START#2" << std::endl;
+        std::unique_lock lk{mutex};
+        std::this_thread::sleep_for(5s);
+    };
+
+    {
+        std::jthread thd_2{work_2};
+        std::this_thread::sleep_for(50ms);
+        std::jthread thd_1{work_1};
+    }
+}
+
 int main()
 {
     std::cout << "Main thread starts..." << std::endl;
@@ -122,4 +155,7 @@ int main()
     }
 
     std::cout << "Main thread ends..." << std::endl;
+
+    timed_mutex_demo();
 }
+

@@ -6,7 +6,7 @@ class BankAccount
 {
     const int id_;
     double balance_;
-    mutable std::mutex mtx_balance_;
+    mutable std::recursive_mutex mtx_balance_;
 
 public:
     BankAccount(int id, double balance)
@@ -56,6 +56,11 @@ public:
         std::lock_guard lk{mtx_balance_};
         return balance_;
     }
+
+    std::unique_lock<std::recursive_mutex> with_lock()
+    {
+        return std::unique_lock{mtx_balance_};
+    }
 };
 
 void make_withdraws(BankAccount& ba, int no_of_operations)
@@ -91,6 +96,12 @@ int main()
     std::thread thd2(&make_deposits, std::ref(ba1), NO_OF_ITERS);
     std::thread thd3(&make_transfers, std::ref(ba1), std::ref(ba2), NO_OF_ITERS);
     std::thread thd4(&make_transfers, std::ref(ba2), std::ref(ba1), NO_OF_ITERS);
+    
+    {
+        auto lk = ba1.with_lock();
+        ba1.withdraw(50);
+        ba1.deposit(100);
+    }
 
     thd1.join();
     thd2.join();
