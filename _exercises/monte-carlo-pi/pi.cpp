@@ -7,7 +7,6 @@
 #include <numeric>
 #include <random>
 #include <thread>
-#include <atomic>
 
 /*******************************************************
  * https://academo.org/demos/estimating-pi-monte-carlo
@@ -137,6 +136,49 @@ double multi_thread_pi_atomic(const uintmax_t count, const size_t no_of_cores = 
     return pi;
 }
 
+namespace Futures
+{
+    uintmax_t calc_hits(const uintmax_t count)
+    {
+        const auto seed = std::hash<std::thread::id>{}(std::this_thread::get_id());
+        std::mt19937_64 rnd_gen(seed);
+        std::uniform_real_distribution<double> rnd_distr(0.0, 1.0);
+
+        uintmax_t hits = 0;
+        for (long n = 0; n < count; ++n) // hot-loop
+        {
+            double x = rnd_distr(rnd_gen);
+            double y = rnd_distr(rnd_gen);
+            if (x * x + y * y < 1)
+                ++hits;
+        }
+        return hits;
+    }
+
+    double multi_thread_pi_futures(const uintmax_t count, const size_t no_of_cores = std::thread::hardware_concurrency())
+    {
+        const uintmax_t count_per_thread = count / no_of_cores;
+        std::vector<std::future<uintmax_t>> f_hits;
+        
+        f_hits.push_back(std::async(std::launch::deferred, calc_hits, count_per_thread));
+
+        for (size_t i = 0; i < no_of_cores-1; ++i)
+        {
+            f_hits.push_back(std::async(std::launch::async, calc_hits, count_per_thread));
+        }
+
+        uintmax_t hits = 0;
+        for (auto& fh : f_hits)
+        {
+            hits += fh.get();
+        }
+
+        const double pi = static_cast<double>(hits) / count * 4;
+
+        return pi;
+    }
+} // namespace Futures
+
 int main()
 {
     const size_t no_of_threads = std::thread::hardware_concurrency();
@@ -197,6 +239,21 @@ int main()
         const auto start = chrono::high_resolution_clock::now();
 
         const double pi = multi_thread_pi_atomic(N, no_of_threads);
+
+        const auto end = chrono::high_resolution_clock::now();
+        const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+        cout << "Pi = " << pi << endl;
+        cout << "Elapsed = " << elapsed_time << "ms" << endl;
+    }
+
+    //////////////////////////////////////////////////////////////////////////////
+    // multithreading with futures
+    {
+        cout << "Multithreading Futures - Pi calculation started!" << endl;
+        const auto start = chrono::high_resolution_clock::now();
+
+        const double pi = Futures::multi_thread_pi_futures(N, no_of_threads);
 
         const auto end = chrono::high_resolution_clock::now();
         const auto elapsed_time = chrono::duration_cast<chrono::milliseconds>(end - start).count();
