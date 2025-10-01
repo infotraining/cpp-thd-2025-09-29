@@ -30,6 +30,16 @@ public:
         cv_q_not_empty_.notify_one();
     }
 
+    void push(T&& item)
+    {
+        {
+            std::lock_guard lk{mtx_q_};
+            q_.push(std::move(item));
+        }
+
+        cv_q_not_empty_.notify_one();
+    }
+
     void push(std::initializer_list<T> items)
     {
         {
@@ -46,7 +56,7 @@ public:
         std::unique_lock lk{mtx_q_};
         cv_q_not_empty_.wait(lk, [this] { return !q_.empty(); });
 
-        item = q_.front();
+        item = std::move(q_.front());
         q_.pop();
     }
 
@@ -55,7 +65,7 @@ public:
         std::unique_lock lk{mtx_q_, std::try_to_lock};
         if (!lk.owns_lock() || q_.empty())
             return false;
-        item = q_.front();
+        item = std::move(q_.front());
         q_.pop();
         return true;
     }
