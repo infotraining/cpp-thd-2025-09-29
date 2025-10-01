@@ -41,6 +41,44 @@ void save_to_file(const std::string& filename)
     sync_cout() << "File saved: " << filename << std::endl;
 }
 
+void consumer(int id, std::shared_future<int> fs)
+{
+    sync_cout() << "Consumer#" << id << "\n";
+
+    try
+    {
+        int result = fs.get(); 
+        sync_cout() << "Result: " << result << "\n";
+    }
+    catch(const std::exception& e)
+    {
+        sync_cout() << "Exception: " << e.what() << '\n';
+    }
+}
+
+class SquareCalulator
+{
+    std::promise<int> promise_result_;
+public:
+    std::future<int> get_future()
+    {
+        return promise_result_.get_future();
+    }
+
+    void calculate(int n)
+    {
+        try
+        {
+            int n_square = calculate_square(n);
+            promise_result_.set_value(n_square);
+        }
+        catch(...)
+        {
+            promise_result_.set_exception(std::current_exception());
+        }
+    }
+};
+
 int main()
 {
     sync_cout() << "Main thread starts...\n";
@@ -67,7 +105,7 @@ int main()
         sync_cout() << "Caught an exception: " << e.what() << "\n";
     }
 
-    //////////////////////////////////////////////////
+    sync_cout() << "\n-------------------------------\n";
 
     std::vector<std::tuple<int, std::future<int>>> f_squares;
 
@@ -87,5 +125,33 @@ int main()
         {
             sync_cout() << "Exception for " << n << ": " << e.what() << "\n";
         }
+    }
+
+    /////////////////////////////////////////////////////////
+    // std::future vs. std::shared_future
+
+    std::future<int> f_square_144 = std::async(std::launch::async, calculate_square, 144);
+
+    std::shared_future<int> shared_square_144 = f_square_144.share();
+
+    {
+        std::jthread thd_1{consumer, 1, shared_square_144};
+        std::jthread thd_2{consumer, 2, shared_square_144};
+        std::jthread thd_3{consumer, 3, shared_square_144};
+    }
+
+    sync_cout() << "END of MAIN\n";
+
+    ////////////////////////////////////////////////////////
+    // std::promise
+
+    SquareCalulator calc;
+    std::future<int> f_calc = calc.get_future();
+
+    {
+        std::jthread thd_1{[&calc] { calc.calculate(13); }};
+        std::jthread thd_2{[f = std::move(f_calc)]() mutable { 
+            sync_cout() << "Result from SquareCalculator: " << f.get() << "\n";
+        }};
     }
 }
