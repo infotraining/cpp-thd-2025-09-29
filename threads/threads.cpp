@@ -163,6 +163,31 @@ void jthread_demo()
     stop_src.request_stop();
 } // joining all jthreads
 
+
+thread_local std::string request_id;
+
+void log(const std::string& message) {
+    std::cout << "[Request " << request_id << "] " << message << "\n";
+}
+
+void handle_request(const std::string& id) 
+{
+    request_id = id;  // Set thread-local context
+    log("Processing started");
+    // ... more work ...
+    log("Processing finished");
+}
+
+void thread_local_storage_demo() 
+{
+    std::thread t1(handle_request, "abc123");
+    std::thread t2(handle_request, "xyz789");
+
+    t1.join();
+    t2.join();
+}
+
+
 int main()
 {
     const size_t no_of_cores = std::max(1u, std::thread::hardware_concurrency());
@@ -174,4 +199,6 @@ int main()
     jthread_demo();
 
     std::cout << "End of main..." << std::endl;
+
+    thread_local_storage_demo();
 }

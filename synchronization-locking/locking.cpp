@@ -2,16 +2,17 @@
 #include <chrono>
 #include <functional>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
-#include <mutex>
+#include <array>
 
 using namespace std::literals;
 
 void run(int& value)
 {
-    for(int i = 0; i < 10'000'000; ++i)
+    for (int i = 0; i < 10'000'000; ++i)
     {
         ++value;
     }
@@ -22,20 +23,53 @@ void may_throw()
     throw std::runtime_error("ERROR#13");
 }
 
+template <typename T>
+struct SynchronizedValue
+{
+    T value;
+    std::mutex mtx_value;
+
+    [[nodiscard("Must be assigned to start critical section")]]
+    std::unique_lock<std::mutex> lock()
+    {
+        return std::unique_lock{mtx_value};
+    }
+
+    template <typename F>
+    void with_lock(F&& f)
+    {
+        std::lock_guard lk{mtx_value};
+        f(value);
+    }
+};
+
+void run(SynchronizedValue<int>& counter)
+{
+    for (int i = 0; i < 10'000'000; ++i)
+    {
+        counter.with_lock([](int& v) { ++v; });
+
+        {
+            auto lk = counter.lock();
+            ++counter.value;
+        }
+    } // mtx_value.unlock(); // end of critical section
+}
+
 void run(int& value, std::mutex& mtx_value)
 {
-    for(int i = 0; i < 10'000'000; ++i)
+    for (int i = 0; i < 10'000'000; ++i)
     {
         mtx_value.lock();
         std::lock_guard lk{mtx_value, std::adopt_lock}; // mtx_value.lock(); // start of critical section
         ++value;
-        //may_throw();
+        // may_throw();
     } // mtx_value.unlock(); // end of critical section
 }
 
 void run(std::atomic<int>& value)
 {
-    for(int i = 0; i < 10'000'000; ++i)
+    for (int i = 0; i < 10'000'000; ++i)
     {
         ++value;
     }
@@ -45,7 +79,7 @@ constexpr uintmax_t factorial(uintmax_t n)
 {
     if (n <= 1)
         return 1;
-    return n * factorial(n-1);
+    return n * factorial(n - 1);
 }
 
 template <size_t N>
@@ -53,7 +87,7 @@ constexpr auto create_factorial_lookup_table()
 {
     std::array<uintmax_t, N> results{};
 
-    for(size_t i = 0; i < N; ++i)
+    for (size_t i = 0; i < N; ++i)
         results[i] = factorial(i);
 
     return results;
@@ -61,15 +95,15 @@ constexpr auto create_factorial_lookup_table()
 
 void test_lookup_table()
 {
-    //constexpr int test_r = hardening_code();
+    // constexpr int test_r = hardening_code();
     constexpr auto lookup_factorial = create_factorial_lookup_table<13>();
 }
 
 void timed_mutex_demo()
 {
     std::timed_mutex mutex;
-    
-    auto work_1 = [&](){
+
+    auto work_1 = [&]() {
         std::cout << "START#1" << std::endl;
         std::unique_lock<std::timed_mutex> lock(mutex, std::try_to_lock);
         if (!lock.owns_lock())
@@ -77,9 +111,9 @@ void timed_mutex_demo()
             do
             {
                 std::cout << "Thread does not own a lock..."
-                        << " Tries to acquire a mutex..."
-                        << std::endl;
-            } while(!lock.try_lock_for(std::chrono::seconds(1)));
+                          << " Tries to acquire a mutex..."
+                          << std::endl;
+            } while (!lock.try_lock_for(std::chrono::seconds(1)));
         }
 
         std::cout << "Access#1 granted" << "\n";
@@ -158,4 +192,3 @@ int main()
 
     timed_mutex_demo();
 }
-
