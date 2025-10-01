@@ -79,6 +79,17 @@ public:
     }
 };
 
+template <typename F>
+auto spawn_task(F f)
+{
+    using TResult = decltype(f());
+    std::packaged_task<TResult()> pt{f};
+    std::future<TResult> future_result = pt.get_future();
+    std::jthread thd{std::move(pt)};
+    thd.detach();
+    return future_result;
+}
+
 int main()
 {
     sync_cout() << "Main thread starts...\n";
@@ -154,4 +165,37 @@ int main()
             sync_cout() << "Result from SquareCalculator: " << f.get() << "\n";
         }};
     }
+
+    ////////////////////////////////////////////////////////
+    // std::packaged_task
+
+    std::packaged_task<int(int)> pt_1{calculate_square};
+    std::packaged_task<int(int)> pt_2{calculate_square};
+    std::future<int> fpt_1 = pt_1.get_future();
+    std::future<int> fpt_2 = pt_2.get_future();
+
+    std::jthread thd_pt1{std::move(pt_1), 13};
+
+    pt_2(23); // synchronous op
+
+    sync_cout() << "From packaged_task: " << fpt_1.get() << "\n";
+    sync_cout() << "From packaged_task: " << fpt_2.get() << "\n";
+
+    ////////////////////////////////////////////////////////
+    // std BUG
+
+    // auto _1 = std::async(std::launch::async, save_to_file, "data1.txt");
+    // auto _2 = std::async(std::launch::async, save_to_file, "data2.txt");
+    // auto _3 = std::async(std::launch::async, save_to_file, "data3.txt");
+    // auto _4 = std::async(std::launch::async, save_to_file, "data4.txt");
+
+    auto t1 = spawn_task([] { save_to_file("data1.txt");});
+    auto t2 = spawn_task([] { save_to_file("data2.txt");});
+    auto t3 = spawn_task([] { save_to_file("data3.txt");});
+    auto t4 = spawn_task([] { save_to_file("data4.txt");});
+
+    t1.wait();
+    t2.wait();
+    t3.wait();
+    t4.wait();
 }
