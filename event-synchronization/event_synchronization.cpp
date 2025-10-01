@@ -99,33 +99,60 @@ class Data
 {
     std::vector<int> data_;
     std::atomic<bool> is_ready_ = false;
+    int temp;
     static_assert(std::atomic<double>::is_always_lock_free);
+
 public:
     void read()
     {
         std::osyncstream(std::cout) << "Start reading..." << std::endl;
         data_.resize(100);
-        
+
         std::random_device rnd;
         std::generate(begin(data_), end(data_), [&rnd] { return rnd() % 1000; });
         std::this_thread::sleep_for(2s);
         std::osyncstream(std::cout) << "End reading..." << std::endl;
-        
+
         /////////////////////////////////////////////////////////
-        is_ready_ = true; 
+        // is_ready_ = true;
+        is_ready_.store(true, std::memory_order_release);
     }
 
     void process(int id)
     {
-        while (!is_ready_) //////////////////////////////////////
+        while (!is_ready_.load(std::memory_order_acquire))
+        /////////////////////////////////////////////////////////
         {
-            //std::this_thread::yield();
+            // std::this_thread::yield();
         }
-        
+
         long sum = std::accumulate(begin(data_), end(data_), 0L);
         std::osyncstream(std::cout) << "Id: " << id << "; Sum: " << sum << std::endl;
     }
 };
+
+namespace Atomics
+{
+    class SpinLockMutex
+    {
+        std::atomic_flag flag_{};
+
+    public:
+        SpinLockMutex()
+        { }
+
+        void lock()
+        {
+            while (flag_.test_and_set(std::memory_order_acquire))
+            {}
+        }
+
+        void unlock()
+        {
+            flag_.clear(std::memory_order_release);
+        }
+    };
+} // namespace Atomics
 
 int main()
 {
